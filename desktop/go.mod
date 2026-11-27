@@ -3,7 +3,7 @@ module gospeak-desktop
 go 1.27.4
 
 require (
-	github.com/egoist/mygo v0.8.3
+	github.com/egoist/mygo v0.10.0
 	gospeak/proxyrules v0.0.0
 )
 
