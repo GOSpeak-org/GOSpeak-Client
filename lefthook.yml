@@ -31,3 +31,10 @@ pre-push:
       run: node scripts/check-mobile-bridge.mjs
     "typecheck":
       run: pnpm typecheck
+    "protect release branch":
+      run: |
+        branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
+        if [ "$branch" = "release" ] && [ "${GOSPEAK_ALLOW_RELEASE_PUSH:-0}" != "1" ]; then
+          echo "拒绝：当前在 release 分支，禁止直接 push。请通过 PR 合并；确需直推请设 GOSPEAK_ALLOW_RELEASE_PUSH=1。" >&2
+          exit 1
+        fi
