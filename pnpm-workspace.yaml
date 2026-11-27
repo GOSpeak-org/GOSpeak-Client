@@ -4,3 +4,8 @@ packages:
   - "plugins/*"
   - "desktop"
   - "mobile"
+
+onlyBuiltDependencies:
+  - esbuild
+  - lefthook
+  - protobufjs
