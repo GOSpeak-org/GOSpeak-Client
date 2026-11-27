@@ -1,0 +1,245 @@
+import { Dialog, DialogContent, DialogTitle, toast } from "@gospeak/components";
+import { useNavigate } from "@tanstack/react-router";
+import { X } from "lucide-react";
+import { useState } from "react";
+import { createRoom as createRoomApi } from "@/api/room";
+import { Form, type FormFieldConfig } from "@/components/form";
+import { socketStore } from "@/stores/socketStore";
+import { toastActionError } from "@/utils/toast";
+import {
+	createRoomLimitSchema,
+	fieldError,
+	roomDescriptionSchema,
+	roomNameSchema,
+	roomPasswordSchema,
+} from "@/utils/formSchemas";
+
+export interface CreateRoomConfig {
+	name: string;
+	password: string;
+	limit: number;
+	joinAfterCreate: boolean;
+	audio_only: boolean;
+	allow_audience: boolean;
+	description: string;
+	type: "text" | "voice";
+	domainUUID: string;
+}
+
+interface CreateRoomModalProps {
+	open: boolean;
+	onClose: () => void;
+	domainUUID: string;
+	onCreated?: (config: CreateRoomConfig) => void | Promise<void>;
+}
+
+export default function CreateRoomModal({
+	open,
+	onClose,
+	domainUUID,
+	onCreated,
+}: CreateRoomModalProps) {
+	const navigate = useNavigate();
+	const [values, setValues] = useState<Record<string, any>>({
+		type: "voice",
+		name: "",
+		password: "",
+		limit: 12,
+		audio_only: true,
+		allow_audience: true,
+		joinAfterCreate: true,
+		description: "",
+	});
+
+	const isText = values.type === "text";
+	const fields: Array<FormFieldConfig & { kind?: "switch" }> = [
+		{
+			name: "type",
+			label: "房间类型",
+			type: "select",
+			options: [
+				{ value: "voice", label: "语音房" },
+				{ value: "text", label: "文字房" },
+			],
+		},
+		{
+			name: "name",
+			label: "房间名称",
+			type: "text",
+			placeholder: "请输入房间名称",
+			required: true,
+			validation: (v: string) => fieldError(roomNameSchema, v),
+		},
+		{
+			name: "password",
+			label: "房间密码",
+			type: "password",
+			placeholder: "选填，留空表示公开房间",
+			validation: (v: string) => fieldError(roomPasswordSchema, v),
+		},
+		...(isText
+			? []
+			: [
+					{
+						name: "limit",
+						label: "人数上限",
+						type: "number" as const,
+						required: true,
+						validation: (v: number) => fieldError(createRoomLimitSchema, v),
+					},
+				]),
+		{ name: "audio_only", label: "仅语音模式", type: "switch" },
+		{ name: "allow_audience", label: "允许旁听", type: "switch" },
+		{ name: "joinAfterCreate", label: "创建后进入域页", type: "switch" },
+		{
+			name: "description",
+			label: "房间说明",
+			type: "textarea",
+			placeholder: "选填，用于说明当前房间的主题或规则",
+			validation: (v: string) => fieldError(roomDescriptionSchema, v),
+		},
+	];
+
+	const summary = {
+		name: values.name.trim() || "未命名房间",
+		limit: values.limit || 0,
+		kind: values.type === "text" ? "文字房" : "语音房",
+		mode:
+			values.type === "text"
+				? "文字聊天"
+				: values.audio_only
+					? "语音"
+					: "音视频",
+		audience: values.allow_audience ? "允许旁听" : "仅成员加入",
+	};
+
+	async function handleSubmit(formValues: Record<string, any>) {
+		try {
+			const duuid = domainUUID.trim();
+			if (!duuid) {
+				toast.warning("请先选择域");
+				return;
+			}
+			const payload: CreateRoomConfig = {
+				name: formValues.name.trim(),
+				password: formValues.password,
+				limit: formValues.type === "text" ? 0 : formValues.limit,
+				joinAfterCreate: formValues.joinAfterCreate,
+				audio_only: formValues.audio_only,
+				allow_audience: formValues.allow_audience,
+				description: formValues.description.trim(),
+				type: formValues.type === "text" ? "text" : "voice",
+				domainUUID: duuid,
+			};
+			const room = await createRoomApi({
+				name: payload.name,
+				password: payload.password || undefined,
+				description: payload.description,
+				limit: payload.limit,
+				audio_only: payload.audio_only,
+				allow_audience: payload.allow_audience,
+				type: payload.type,
+				domain_uuid: payload.domainUUID,
+			});
+			await onCreated?.(payload);
+
+			socketStore.connect();
+			socketStore.selectRoom({
+				id: room.id,
+				uuid: room.uuid,
+				name: room.name,
+				domain_uuid: payload.domainUUID,
+				has_password: !!payload.password,
+				description: room.description,
+				limit: room.limit,
+				audio_only: room.audio_only,
+				allow_audience: room.allow_audience,
+				type: room.type,
+				members: [],
+				count: 0,
+				created_at: Date.now(),
+			});
+			socketStore.listRooms();
+			toast.success(`已创建房间: ${payload.name}`);
+			onClose();
+
+			if (payload.joinAfterCreate) {
+				navigate({ to: "/domain/$domainUUID", params: { domainUUID: duuid } });
+			}
+		} catch (error) {
+			console.error("[Room] create failed:", error);
+			toastActionError(error, "创建房间失败");
+		}
+	}
+
+	if (!open) return null;
+
+	return (
+		<Dialog open onOpenChange={(v) => !v && onClose()}>
+			<DialogContent
+				showClose={false}
+				className="flex max-h-[90dvh] max-w-3xl flex-col gap-0 overflow-y-auto rounded-lg p-0 pb-[env(safe-area-inset-bottom)]"
+			>
+				<button
+					type="button"
+					className="hover:bg-muted absolute top-2 right-2 z-10 flex size-9 cursor-pointer items-center justify-center rounded-full border-0"
+					onClick={onClose}
+					aria-label="关闭"
+				>
+					<X size={16} />
+				</button>
+				<div className="border-border shrink-0 border-b px-6 py-5">
+					<DialogTitle className="text-lg font-semibold">新建房间</DialogTitle>
+					<p className="text-muted-foreground mt-1 text-sm">
+						填写基础配置后创建房间。语音房可设置人数上限，文字房不限制人数；房间说明与接入策略会随房间信息一起保存。
+					</p>
+				</div>
+
+				<div className="grid min-h-0 flex-1 gap-6 overflow-y-auto px-6 py-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+					<div>
+						<Form
+							fields={fields}
+							defaultValues={values}
+							onValuesChange={setValues}
+							formClassName="grid gap-2 md:grid-cols-2 md:gap-x-4"
+							submitButtonText="创建房间"
+							onCancel={onClose}
+							actionsFullWidthOnMobile
+							onSubmit={handleSubmit}
+						/>
+					</div>
+
+					<aside className="bg-muted rounded-lg p-4">
+						<div className="text-sm font-medium">配置预览</div>
+						<div className="mt-4 space-y-3 text-sm">
+							<div>
+								<div className="text-muted-foreground">房间名称</div>
+								<div className="mt-1 font-medium break-words">
+									{summary.name}
+								</div>
+							</div>
+							<div>
+								<div className="text-muted-foreground">接入规模</div>
+								<div className="mt-1 font-medium">
+									{isText ? "不限制人数" : `最多 ${summary.limit || "-"} 人`}
+								</div>
+							</div>
+							<div>
+								<div className="text-muted-foreground">媒体模式</div>
+								<div className="mt-1 font-medium">{summary.mode}</div>
+							</div>
+							<div>
+								<div className="text-muted-foreground">房间类型</div>
+								<div className="mt-1 font-medium">{summary.kind}</div>
+							</div>
+							<div>
+								<div className="text-muted-foreground">加入策略</div>
+								<div className="mt-1 font-medium">{summary.audience}</div>
+							</div>
+						</div>
+					</aside>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}

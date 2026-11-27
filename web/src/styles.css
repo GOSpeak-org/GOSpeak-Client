@@ -1,0 +1,44 @@
+@import "tailwindcss";
+/* 自带字体：macOS 用 SF、Windows 用 Segoe UI，字宽与行高不同，
+   同一份设计在两端排版会漂移。Inter + Noto Sans SC 打包进产物统一。 */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/noto-sans-sc";
+@import "@gospeak/components/theme.css";
+@import "./assets/styles/global.css";
+@import "./assets/styles/auth-shell.css";
+@import "./assets/styles/workspace-surface.css";
+@import "./assets/styles/platform.css";
+@config "../tailwind.config.ts";
+
+/*
+ * hover 只在真正支持悬停的指针上生效：触屏点按后不会把 hover 态"粘"在元素上，
+ * 也不需要在 140 处调用点逐个包 media query。桌面鼠标下渲染与改动前一致。
+ * group-hover 是独立变体，需要同样收敛，否则 3 处 group-hover 仍会在触屏上残留。
+ */
+@custom-variant hover {
+	@media (hover: hover) {
+		&:hover {
+			@slot;
+		}
+	}
+}
+
+@custom-variant group-hover {
+	@media (hover: hover) {
+		&:is(:where(.group):hover *) {
+			@slot;
+		}
+	}
+}
+
+/*
+ * 兼容性边界（与上面两条变体一起看）：
+ * - 媒体查询本身：hover 变体 Chrome 41+ / Firefox 64+ / Safari 9+；
+ *   混合设备按主输入设备判定——鼠标为主时是 hover 行为，触控为主时才是触屏行为。
+ * - 这里只收敛了无名 group。将来若用命名 group（group/name + group-hover/name），
+ *   走的是 Tailwind 内置变体、没有 media 包裹，触屏上会重新粘住，需要在这里补对应变体。
+ * - 触屏相关规则在 assets/styles/platform.css，同样按 (hover: hover) 分级。
+ */
+
+/* 音量/滑块统一由 @gospeak/components 的 Radix Slider 渲染，
+   不再保留原生 range 的全局补丁样式（曾让横向滑块被误当竖向处理）。 */

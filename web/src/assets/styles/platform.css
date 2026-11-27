@@ -1,0 +1,65 @@
+/*
+ * 平台适配层：只放「同一份设计在不同目标 / 不同输入设备上必须不同」的规则。
+ *
+ * 基线 = Web 构建 + 鼠标。桌面原生的窗口态与移动端的触控手感和基线分开写，
+ * 业务组件不写平台分支，差异全部收敛在这里。
+ *
+ * 平台信号：<html data-platform="web|desktop|mobile">（utils/platform.ts 启动时写入）。
+ * 输入设备差异用 @media (hover) / (pointer) 判断——换了输入设备立刻跟着变，
+ * 与构建目标无关（触摸笔记本按主输入设备判定）。
+ *
+ * 规则放在 base 层：工具的 touch-action / transition 等仍可逐点覆盖。
+ */
+
+@layer base {
+	/* ── 移动端触控 ─────────────────────────────────────────────── */
+
+	/* 手指点按不闪系统灰色高亮；按下态由组件自己的 :active / data-active 表达 */
+	html[data-platform="mobile"] {
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	/* 触控没有 hover 预热期：按钮/链接立即响应，避免双击缩放吃掉第一次点击 */
+	html[data-platform="mobile"] button,
+	html[data-platform="mobile"] [role="button"],
+	html[data-platform="mobile"] a[href],
+	html[data-platform="mobile"] summary {
+		touch-action: manipulation;
+	}
+
+	/* WebView 里向下拖会触发下拉刷新 / 回弹链，滚到底后整页跟着弹 */
+	html[data-platform="mobile"] body {
+		overscroll-behavior-y: none;
+	}
+	html[data-platform="mobile"] .overflow-y-auto,
+	html[data-platform="mobile"] .overflow-auto,
+	html[data-platform="mobile"] .ds-scroll {
+		overscroll-behavior: contain;
+	}
+
+	/* ── 系统偏好 ───────────────────────────────────────────────── */
+
+	/* 减少动效：登录页有局部处理，这里兜住全站过渡与 Radix 的进出场动画 */
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
+	}
+}
+
+/* ── 桌面原生窗口 ─────────────────────────────────────────────── */
+
+/* 窗口失焦时按原生非活动态收敛：文字变弱，悬停也不再点亮按钮。
+   这条必须留在层外：工具类的 .hover\:bg-muted:hover 属于 utilities 层，
+   非分层的普通规则优先级更高，不需要 !important。 */
+:root[data-mygo-window-inactive] .app-titlebar {
+	color: var(--faint-foreground);
+}
+:root[data-mygo-window-inactive] .app-titlebar button:hover {
+	background-color: transparent;
+}

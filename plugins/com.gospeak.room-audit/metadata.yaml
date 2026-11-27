@@ -1,0 +1,5 @@
+runtime: node
+plugin_id: com.gospeak.room-audit
+name: 房间巡检插件
+version: 1.0.0
+entrypoint: index.js

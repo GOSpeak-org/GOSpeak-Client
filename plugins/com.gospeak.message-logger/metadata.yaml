@@ -1,0 +1,5 @@
+runtime: node
+plugin_id: com.gospeak.message-logger
+name: 消息日志插件
+version: 1.0.0
+entrypoint: index.js

@@ -1,0 +1,118 @@
+package main
+
+// Startup tracing for the desktop host.
+//
+// Set GOSPEAK_STARTUP_DEBUG=1 to print a timeline of the launch path
+// (process start → app ready → loopback proxy → window → first frontend
+// request → React mounted) to stderr. Off by default; the cost is one env
+// lookup per mark.
+//
+// GOSPEAK_STARTUP_EXIT_MS=<ms> quits the app that long after launch, which
+// together with the flag above makes an unattended launch-time measurement
+// possible (`GOSPEAK_STARTUP_DEBUG=1 GOSPEAK_STARTUP_EXIT_MS=8000 ./gospeak-desktop`).
+// It has no effect unless GOSPEAK_STARTUP_DEBUG=1, so a packaged build cannot
+// be made to exit by its environment.
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/egoist/mygo"
+)
+
+// startupT0 is set as early as Go package initialization allows: it misses the
+// runtime/dyld part of the launch, but covers everything this package controls.
+var startupT0 = time.Now()
+
+func startupDebug() bool { return os.Getenv("GOSPEAK_STARTUP_DEBUG") == "1" }
+
+// startupTrace is the file the timeline also goes to while tracing: a packaged
+// Windows app is a GUI subsystem binary, so stderr reaches no console and the
+// only way to read the numbers is a file in the user data directory.
+var startupTrace struct {
+	sync.Mutex
+	opened bool
+	file   *os.File
+}
+
+// startupMark logs elapsed time since process start. No-op unless tracing is on.
+func startupMark(format string, args ...any) {
+	if !startupDebug() {
+		return
+	}
+	line := fmt.Sprintf("[startup] +%-8s %s",
+		time.Since(startupT0).Round(100*time.Microsecond),
+		fmt.Sprintf(format, args...))
+	log.Print(line)
+	startupTrace.Lock()
+	defer startupTrace.Unlock()
+	if !startupTrace.opened {
+		startupTrace.opened = true
+		if dir, err := mygo.App.Path(mygo.PathUserData); err == nil {
+			f, ferr := os.OpenFile(filepath.Join(dir, "startup.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+			if ferr == nil {
+				startupTrace.file = f
+				_, _ = fmt.Fprintf(f, "version=%s commit=%s\n", version, commit)
+			}
+		}
+	}
+	if startupTrace.file != nil {
+		_, _ = fmt.Fprintln(startupTrace.file, line)
+	}
+}
+
+// startupProbeFrontend polls the page until React has mounted something under
+// #app, giving an end-to-end number for "the window shows the app" that the Go
+// side otherwise cannot observe (mygo exposes no load/paint event). It also
+// reports the page's own clock (performance.now at mount), which isolates the
+// frontend's boot cost from WebKit process-start variance.
+func startupProbeFrontend(w *mygo.Window) {
+	if !startupDebug() || w == nil {
+		return
+	}
+	const probe = `(() => {
+		const el = document.getElementById('app');
+		return el && el.childElementCount > 0 ? Math.round(performance.now()) : -1;
+	})()`
+	go func() {
+		deadline := time.Now().Add(20 * time.Second)
+		for time.Now().Before(deadline) {
+			if p := w.Page(); p != nil {
+				if v, err := p.Eval(probe); err == nil {
+					if ms, ok := v.(float64); ok && ms >= 0 {
+						startupMark("frontend mounted (#app rendered, page time %dms)", int(ms))
+						return
+					}
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		startupMark("frontend mount probe timed out")
+	}()
+}
+
+// startupScheduleAutoQuit quits after GOSPEAK_STARTUP_EXIT_MS (measurement only).
+// It is gated on GOSPEAK_STARTUP_DEBUG: a shipped build must not let the
+// environment force the app to exit.
+func startupScheduleAutoQuit() {
+	if !startupDebug() {
+		return
+	}
+	raw := os.Getenv("GOSPEAK_STARTUP_EXIT_MS")
+	if raw == "" {
+		return
+	}
+	ms, err := strconv.Atoi(raw)
+	if err != nil || ms <= 0 {
+		return
+	}
+	time.AfterFunc(time.Duration(ms)*time.Millisecond, func() {
+		startupMark("auto-quit")
+		requestQuit()
+	})
+}

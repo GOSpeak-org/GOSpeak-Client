@@ -1,0 +1,14 @@
+{
+	"name": "com.gospeak.room-audit",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"description": "GOSpeak 基础能力插件：跟踪成员进出并周期性核对房间列表",
+	"main": "index.js",
+	"scripts": {
+		"start": "node index.js"
+	},
+	"dependencies": {
+		"@gospeak/plugin-sdk": "file:../../packages/plugin-sdk"
+	}
+}

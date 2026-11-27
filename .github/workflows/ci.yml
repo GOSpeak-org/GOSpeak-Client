@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [release]
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/release' }}
+
+jobs:
+  client:
+    name: Lint, typecheck, build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm exec biome ci .
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: |
+          pnpm --filter @gospeak/web build
+          pnpm --filter @gospeak/web build:desktop
+          pnpm --filter @gospeak/web build:mobile
+          cd desktop && go build ./...
+      - name: Test
+        run: pnpm test
+      - name: Script tests
+        run: node --test scripts/*.test.mjs

@@ -1,0 +1,6 @@
+packages:
+  - "web"
+  - "packages/*"
+  - "plugins/*"
+  - "desktop"
+  - "mobile"

@@ -1,0 +1,35 @@
+{
+	"name": "@gospeak/client-root",
+	"version": "1.3.0-rc.1",
+	"private": true,
+	"packageManager": "pnpm@10.11.0",
+	"scripts": {
+		"test": "turbo run test",
+		"test:web": "pnpm --filter @gospeak/web test",
+		"lint": "turbo run lint",
+		"check": "turbo run check",
+		"typecheck": "turbo run typecheck",
+		"format": "pnpm -r format",
+		"gen:protocol": "node scripts/check-protocol-sync.mjs --fix"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.6.8",
+		"@commitlint/cli": "^21.2.4",
+		"@commitlint/config-conventional": "^21.2.4",
+		"lefthook": "2.2.2",
+		"turbo": "^2.11.13"
+	},
+	"pnpm": {
+		"overrides": {
+			"proxy-addr": "^2.0.8",
+			"seroval": "^1.7.10",
+			"tldts-core": "^7.5.5",
+			"@testing-library/jest-dom": "6.9.1"
+		},
+		"peerDependencyRules": {
+			"allowedVersions": {
+				"typescript": "7.x"
+			}
+		}
+	}
+}

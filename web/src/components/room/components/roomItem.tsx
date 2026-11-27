@@ -1,0 +1,351 @@
+import clsx from "clsx";
+import { Hash, Lock, LogOut, Mic, Pencil, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Badge } from "@gospeak/components";
+import { inMobile } from "@gospeak/mobile-capabilities";
+import { chatStore, useChatStore } from "@/stores/chatStore";
+import { type RoomInfo, socketStore } from "@/stores/socketStore";
+import { toastActionError } from "@/utils/toast";
+import { canManageRoomItem } from "../roomListUtils";
+import MemberItemButton from "./memberItemButton";
+import PasswordModal from "./passwordModal";
+
+// 子项
+export interface RoomItemPropsType {
+	room: RoomInfo;
+	isActive?: boolean;
+	selectedMember: { identity: string; x: number; y: number } | null;
+	onSelectMember: (identity: string, x: number, y: number) => void;
+	onCloseMember: () => void;
+	onEditRoom: (room: RoomInfo) => void;
+	onDeleteRoom: (room: RoomInfo) => void;
+}
+
+export function RoomItem({
+	room,
+	isActive,
+	onSelectMember,
+	onEditRoom,
+	onDeleteRoom,
+}: RoomItemPropsType) {
+	const unread = useChatStore((s) =>
+		room.uuid ? (s.unreadByRoom[room.uuid] ?? 0) : 0,
+	);
+	const isSelected =
+		socketStore.selectedRoomInfo()?.name === room.name &&
+		socketStore.selectedRoomInfo()?.domain_uuid === room.domain_uuid;
+	const [showPasswordModal, setShowPasswordModal] = useState(false);
+	const [truncated, setTruncated] = useState(false);
+	const [tip, setTip] = useState<{
+		text: string;
+		left: number;
+		top: number;
+	} | null>(null);
+	const [clickHint, setClickHint] = useState<{ x: number; y: number } | null>(
+		null,
+	);
+	const [contextMenu, setContextMenu] = useState<{
+		x: number;
+		y: number;
+	} | null>(null);
+	const nameRef = useRef<HTMLSpanElement>(null);
+	const contextMenuRef = useRef<HTMLDivElement>(null);
+
+	const canEdit = canManageRoomItem(room, "room:update");
+	const canDelete = canManageRoomItem(room, "room:delete");
+
+	const isInRoom = () => {
+		if (room.type === "text") {
+			return (
+				chatStore.textRoom() === room.uuid ||
+				chatStore.textRoomName() === room.name
+			);
+		}
+		const selected = socketStore.selectedRoomInfo();
+		const sameDomain = (domainUUID?: string) =>
+			(domainUUID || "") === (room.domain_uuid || "");
+		return (
+			(socketStore.currentRoom() === room.name &&
+				sameDomain(socketStore.currentDomainUUID() ?? undefined)) ||
+			(!!selected &&
+				selected.name === room.name &&
+				sameDomain(selected.domain_uuid))
+		);
+	};
+
+	const openContextMenu = (event: React.MouseEvent) => {
+		if (!canEdit && !canDelete && !isInRoom()) return;
+		event.preventDefault();
+		setClickHint(null);
+		const menuWidth = 176;
+		const visibleMenuCount = [canEdit, canDelete, isInRoom()].filter(
+			Boolean,
+		).length;
+		const menuHeight = visibleMenuCount * 40 + 8;
+		const x = Math.max(
+			8,
+			Math.min(event.clientX, Math.max(8, window.innerWidth - menuWidth - 8)),
+		);
+		const y = Math.max(
+			8,
+			Math.min(event.clientY, Math.max(8, window.innerHeight - menuHeight - 8)),
+		);
+		setContextMenu({ x, y });
+	};
+
+	const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+	useEffect(() => {
+		if (!contextMenu) return;
+		const onPointerDown = (event: MouseEvent) => {
+			if (!contextMenuRef.current?.contains(event.target as Node))
+				closeContextMenu();
+		};
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") closeContextMenu();
+		};
+		document.addEventListener("mousedown", onPointerDown);
+		document.addEventListener("keydown", onKeyDown);
+		window.addEventListener("scroll", closeContextMenu, true);
+		window.addEventListener("resize", closeContextMenu);
+		return () => {
+			document.removeEventListener("mousedown", onPointerDown);
+			document.removeEventListener("keydown", onKeyDown);
+			window.removeEventListener("scroll", closeContextMenu, true);
+			window.removeEventListener("resize", closeContextMenu);
+		};
+	}, [contextMenu, closeContextMenu]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: room.name 为有意触发器（改名/换房后需重测截断）
+	useEffect(() => {
+		const el = nameRef.current;
+		if (!el) return;
+		const check = () => setTruncated(el.scrollWidth > el.clientWidth + 1);
+		check();
+		const ro = new ResizeObserver(check);
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, [room.name]);
+
+	const tipText = `${room.name}${room.has_password ? " · 需要密码" : ""}`;
+
+	const showTip = (e: React.MouseEvent) => {
+		if (!truncated) return;
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		setTip({ text: tipText, left: rect.left, top: rect.bottom + 6 });
+	};
+
+	const showDoubleClickHint = (event: React.MouseEvent) => {
+		// 移动端单击即进房间，任何调用路径都不应弹「双击进入」提示。
+		if (inMobile()) return;
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		setClickHint({ x: rect.left + rect.width / 2, y: rect.bottom + 6 });
+	};
+
+	const hideTip = useCallback(() => setTip(null), []);
+
+	useEffect(() => {
+		if (!tip && !clickHint) return;
+		const onScroll = () => {
+			hideTip();
+			setClickHint(null);
+		};
+		window.addEventListener("scroll", onScroll, true);
+		return () => window.removeEventListener("scroll", onScroll, true);
+	}, [tip, clickHint, hideTip]);
+
+	const handleJoin = () => {
+		setClickHint(null);
+		closeContextMenu();
+		if (room.has_password) {
+			setShowPasswordModal(true);
+		} else if (room.type === "text") {
+			chatStore.joinTextRoom({
+				uuid: room.uuid,
+				name: room.name,
+				domain_uuid: room.domain_uuid,
+			});
+		} else {
+			socketStore.selectRoom(room);
+		}
+	};
+
+	const handleLeave = () => {
+		closeContextMenu();
+		if (room.type === "text") {
+			chatStore.leaveTextRoom();
+			return;
+		}
+		void socketStore.leaveRoom(room.name, room.domain_uuid).catch((error) => {
+			toastActionError(error, "离开房间失败，请重试");
+		});
+		socketStore.clearCurrentRoom();
+		socketStore.clearSelectedRoom();
+	};
+
+	return (
+		<>
+			<div className="flex w-full shrink-0 flex-col overflow-hidden">
+				<div className="flex w-full min-w-0 items-center">
+					<button
+						className={clsx(
+							"hover:bg-muted active:bg-selected flex min-w-0 flex-1 cursor-pointer items-center justify-between rounded-sm border-0 px-1.5 py-2 text-sm transition-colors active:duration-75 max-md:min-h-11 max-md:py-1.5",
+							isActive ? "bg-selected" : "",
+							isSelected && !isActive ? "bg-selected" : "",
+						)}
+						onContextMenu={openContextMenu}
+						onMouseEnter={showTip}
+						onMouseLeave={() => {
+							hideTip();
+							setClickHint(null);
+						}}
+						onClick={(event) => {
+							// detail === 0 表示键盘激活（Enter/Space），直接加入；
+							// 移动端单击直接加入：用 inMobile() 而非 CSS 宽度，因为 MIUI 等
+							// 大屏设备的 innerWidth 可能 >767，matchMedia 会误判为桌面。
+							// 桌面窄窗口仍按响应式宽度走单击；桌面宽屏保留"双击进入"提示。
+							if (
+								event.detail === 0 ||
+								inMobile() ||
+								window.matchMedia("(max-width: 767px)").matches
+							) {
+								handleJoin();
+								return;
+							}
+							showDoubleClickHint(event);
+						}}
+						onDoubleClick={() => {
+							setClickHint(null);
+							handleJoin();
+						}}
+					>
+						<div className="flex min-w-0 flex-1 items-center space-x-1">
+							<span>
+								{room.type === "text" ? <Hash size={16} /> : <Mic size={16} />}
+							</span>
+							<span
+								ref={nameRef}
+								className="min-w-0 flex-1 truncate text-left text-sm leading-none whitespace-nowrap"
+							>
+								{room.name}
+							</span>
+							{room.has_password && (
+								<span className="text-faint-foreground shrink-0">
+									<Lock size={14} />
+								</span>
+							)}
+						</div>
+
+						<div className="flex shrink-0 items-center gap-1.5 text-xs">
+							{room.type === "text" && unread > 0 && (
+								<Badge count={unread} title={`${unread} 条未读消息`} />
+							)}
+							{room.type !== "text" && (
+								<div className="text-muted-foreground text-xs">{`${room.count}/${room.limit}`}</div>
+							)}
+						</div>
+					</button>
+				</div>
+
+				<div className="flex w-full flex-col">
+					{room.members?.map((member) => (
+						<MemberItemButton
+							key={member.identity}
+							member={member}
+							onSelectMember={onSelectMember}
+						/>
+					))}
+				</div>
+				{showPasswordModal && (
+					<PasswordModal
+						room={room}
+						onClose={() => setShowPasswordModal(false)}
+					/>
+				)}
+			</div>
+			{(tip || clickHint || contextMenu) &&
+				createPortal(
+					<>
+						{tip && (
+							<div
+								className="bg-foreground text-background pointer-events-none fixed z-toast rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap shadow-lg"
+								style={{ left: `${tip.left}px`, top: `${tip.top}px` }}
+							>
+								{tip.text}
+							</div>
+						)}
+						{clickHint && (
+							<div
+								className="bg-foreground text-background pointer-events-none fixed z-toast -translate-x-1/2 rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap shadow-lg"
+								style={{ left: `${clickHint.x}px`, top: `${clickHint.y}px` }}
+							>
+								双击进入
+							</div>
+						)}
+						{contextMenu && (
+							<div
+								ref={contextMenuRef}
+								role="menu"
+								className="border-border bg-popover fixed z-toast min-w-44 overflow-hidden rounded-lg border p-1 shadow-xl"
+								style={{
+									left: `${contextMenu.x}px`,
+									top: `${contextMenu.y}px`,
+								}}
+							>
+								<button
+									type="button"
+									role="menuitem"
+									className="hover:bg-muted focus-visible:bg-muted flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors focus:outline-none"
+									onClick={handleJoin}
+								>
+									<Mic size={14} />
+									<span>进入房间</span>
+								</button>
+								{canEdit && (
+									<button
+										type="button"
+										role="menuitem"
+										className="hover:bg-muted focus-visible:bg-muted flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors focus:outline-none"
+										onClick={() => {
+											closeContextMenu();
+											onEditRoom(room);
+										}}
+									>
+										<Pencil size={14} />
+										<span>编辑房间</span>
+									</button>
+								)}
+								{isInRoom() && (
+									<button
+										type="button"
+										role="menuitem"
+										className="hover:bg-muted focus-visible:bg-muted flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors focus:outline-none"
+										onClick={handleLeave}
+									>
+										<LogOut size={14} />
+										<span>退出房间</span>
+									</button>
+								)}
+								{canDelete && (
+									<button
+										type="button"
+										role="menuitem"
+										className="text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors focus:outline-none"
+										onClick={() => {
+											closeContextMenu();
+											onDeleteRoom(room);
+										}}
+									>
+										<Trash2 size={14} />
+										<span>删除房间</span>
+									</button>
+								)}
+							</div>
+						)}
+					</>,
+					document.body,
+				)}
+		</>
+	);
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  仅 debug 变体生效的清单覆盖：允许明文 HTTP。
+  dev 模式要连局域网 http://<开发机IP>:3000（GOSPEAK_MOBILE_DEV_URL），
+  Android 9+ 默认禁止明文流量，没有这一层会直接 ERR_CLEARTEXT_NOT_PERMITTED。
+  release 构建不合并本文件，因此不放宽生产的安全基线。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>

@@ -1,0 +1,237 @@
+# GOSpeak Version Bump —— push 触发的发版守门员 + 发布编排。
+#
+# 版本号在 .github/versions/{desktop,mobile,web}.yaml 中各自显式声明。
+# 三端互相独立：改哪个 yaml 就只发哪一端，其余组件的 tag 已存在则自动跳过。
+# 每个组件在自己的 tag 上创建独立 Release，产物不混装。
+#
+# **每次 push 到 release 都会触发本 workflow**，但对每个组件判断
+# 「声明的版本号是否已经发布过」：
+#
+#   当前声明版本对应的 tag（gospeak-web-v<version> /
+#   gospeak-desktop-v<version>）已存在
+#     → 版本号没变 → 本 workflow 成功结束并标记 skipped，不创建任何 tag；
+#   任一 tag 不存在（新版本号 / 版本回退到未发布过的值）
+#     → 打 tag → 直接 workflow_call 调用 release.yml 执行发布。
+#
+# 为什么要显式调用：GitHub 会抑制由 GITHUB_TOKEN 推送所派生的 workflow
+# （防递归）。只推 tag 的话，release.yml 的 on.push.tags 根本不会触发，
+# 发布得靠人工 dispatch 补跑。workflow_call 是 job 级调用，不受该限制，
+# 也不需要额外的 PAT。
+#
+# tag 名字一律由 scripts/release-naming.mjs 派生，本文件不手拼字符串。
+#
+# 也可 workflow_dispatch 手动触发一次对账（只补缺失的 tag，不覆盖已有）。
+
+name: Version Bump
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-bump-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bump-tags:
+    name: Release declared versions (skip unchanged)
+    runs-on: ubuntu-latest
+    outputs:
+      web_tag: ${{ steps.gate.outputs.web_tag }}
+      desktop_tag: ${{ steps.gate.outputs.desktop_tag }}
+      mobile_tag: ${{ steps.gate.outputs.mobile_tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        # git tag -a 会创建 annotated tag，必须有 committer 身份；
+        # runner 默认没有配置，缺失时会以 "empty ident name" 直接失败。
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Read declared versions
+        id: versions
+        run: |
+          set -euo pipefail
+          read_version() {
+            node -e '
+              const { readFileSync } = require("node:fs");
+              const src = readFileSync(process.argv[1], "utf8");
+              const m = src.match(/^version:[ \t]*["'"'"']?([^\s#"'"'"']+)["'"'"']?[ \t]*(?:#.*)?$/m);
+              if (!m) { console.error("missing version in " + process.argv[1]); process.exit(1); }
+              console.log(m[1]);
+            ' "$1"
+          }
+          {
+            echo "web=$(read_version .github/versions/web.yaml)"
+            echo "desktop=$(read_version .github/versions/desktop.yaml)"
+            echo "mobile=$(read_version .github/versions/mobile.yaml)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Detect published tags
+        id: tags
+        env:
+          WEB_VERSION: ${{ steps.versions.outputs.web }}
+          DESKTOP_VERSION: ${{ steps.versions.outputs.desktop }}
+          MOBILE_VERSION: ${{ steps.versions.outputs.mobile }}
+        run: |
+          set -euo pipefail
+          # 一次性探测三个组件的 tag 是否已存在于远程，避免逐个 ls-remote。
+          git ls-remote --tags origin > "$RUNNER_TEMP/remote-tags.txt"
+
+          check() {
+            local component="$1" version="$2"
+            local tag
+            tag="$(node scripts/release-naming.mjs tag "$component" "$version")"
+            if grep -qE "refs/tags/${tag}(\^\{\})?$" "$RUNNER_TEMP/remote-tags.txt"; then
+              echo "${component}_exists=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::${component} ${version} 已发布（tag ${tag} 存在），跳过。"
+            else
+              echo "${component}_exists=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::${component} ${version} 尚未发布，将创建 tag ${tag}。"
+            fi
+          }
+
+          check web "$WEB_VERSION"
+          check desktop "$DESKTOP_VERSION"
+          check mobile "$MOBILE_VERSION"
+
+      - name: Decide whether to publish
+        id: gate
+        env:
+          WEB_VERSION: ${{ steps.versions.outputs.web }}
+          WEB_EXISTS: ${{ steps.tags.outputs.web_exists }}
+          DESKTOP_VERSION: ${{ steps.versions.outputs.desktop }}
+          DESKTOP_EXISTS: ${{ steps.tags.outputs.desktop_exists }}
+          MOBILE_VERSION: ${{ steps.versions.outputs.mobile }}
+          MOBILE_EXISTS: ${{ steps.tags.outputs.mobile_exists }}
+        run: |
+          set -euo pipefail
+          # 独立发版：每个组件按自己的版本是否已发布单独决定，互不影响。
+          # 输出 <component>_tag：需要发版时为对应 tag，否则为空字符串。
+          emit_tag() {
+            local component="$1" version="$2" exists="$3"
+            if [ "$exists" = "false" ]; then
+              echo "${component}_tag=$(node scripts/release-naming.mjs tag "$component" "$version")" >> "$GITHUB_OUTPUT"
+              echo "::notice::${component} ${version} 尚未发布，将创建 tag"
+            else
+              echo "${component}_tag=" >> "$GITHUB_OUTPUT"
+              echo "::notice::${component} ${version} 已发布，跳过"
+            fi
+          }
+          emit_tag web "$WEB_VERSION" "$WEB_EXISTS"
+          emit_tag desktop "$DESKTOP_VERSION" "$DESKTOP_EXISTS"
+          emit_tag mobile "$MOBILE_VERSION" "$MOBILE_EXISTS"
+
+      - name: Tag web release if version changed
+        if: steps.tags.outputs.web_exists == 'false'
+        env:
+          VERSION: ${{ steps.versions.outputs.web }}
+        run: |
+          set -euo pipefail
+          tag="$(node scripts/release-naming.mjs tag web "$VERSION")"
+          sha="$(git rev-parse HEAD)"
+          git tag -a "$tag" -m "Release ${tag} (declared in .github/versions/web.yaml)" "$sha"
+          git push origin "refs/tags/${tag}"
+          echo "::notice::created tag ${tag} at ${sha}"
+
+      - name: Tag desktop release if version changed
+        if: steps.tags.outputs.desktop_exists == 'false'
+        env:
+          VERSION: ${{ steps.versions.outputs.desktop }}
+        run: |
+          set -euo pipefail
+          tag="$(node scripts/release-naming.mjs tag desktop "$VERSION")"
+          sha="$(git rev-parse HEAD)"
+          git tag -a "$tag" -m "Release ${tag} (declared in .github/versions/desktop.yaml)" "$sha"
+          git push origin "refs/tags/${tag}"
+          echo "::notice::created tag ${tag} at ${sha}"
+
+      - name: Tag mobile release if version changed
+        if: steps.tags.outputs.mobile_exists == 'false'
+        env:
+          VERSION: ${{ steps.versions.outputs.mobile }}
+        run: |
+          set -euo pipefail
+          tag="$(node scripts/release-naming.mjs tag mobile "$VERSION")"
+          sha="$(git rev-parse HEAD)"
+          git tag -a "$tag" -m "Release ${tag} (declared in .github/versions/mobile.yaml)" "$sha"
+          git push origin "refs/tags/${tag}"
+          echo "::notice::created tag ${tag} at ${sha}"
+
+      - name: Summary
+        env:
+          WEB_VERSION: ${{ steps.versions.outputs.web }}
+          WEB_EXISTS: ${{ steps.tags.outputs.web_exists }}
+          DESKTOP_VERSION: ${{ steps.versions.outputs.desktop }}
+          DESKTOP_EXISTS: ${{ steps.tags.outputs.desktop_exists }}
+          MOBILE_VERSION: ${{ steps.versions.outputs.mobile }}
+          MOBILE_EXISTS: ${{ steps.tags.outputs.mobile_exists }}
+        run: |
+          set -euo pipefail
+          status() {
+            if [ "$1" = "true" ]; then
+              echo "skipped（版本未更新，已发布过）"
+            else
+              echo "released（已打 tag 触发发布）"
+            fi
+          }
+          web_tag="$(node scripts/release-naming.mjs tag web "$WEB_VERSION")"
+          desktop_tag="$(node scripts/release-naming.mjs tag desktop "$DESKTOP_VERSION")"
+          mobile_tag="$(node scripts/release-naming.mjs tag mobile "$MOBILE_VERSION")"
+          {
+            echo "## Version Bump"
+            echo ""
+            echo "| 组件 | 声明版本 | tag | 结果 |"
+            echo "| --- | --- | --- | --- |"
+            echo "| Web (web) | ${WEB_VERSION} | \`${web_tag}\` | $(status "${WEB_EXISTS}") |"
+            echo "| 桌面端 (desktop) | ${DESKTOP_VERSION} | \`${desktop_tag}\` | $(status "${DESKTOP_EXISTS}") |"
+            echo "| 移动端 (mobile) | ${MOBILE_VERSION} | \`${mobile_tag}\` | $(status "${MOBILE_EXISTS}") |"
+            echo ""
+            if [ "${WEB_EXISTS}" = "true" ] && [ "${DESKTOP_EXISTS}" = "true" ] && [ "${MOBILE_EXISTS}" = "true" ]; then
+              echo "三个组件版本号均未变化，本次未触发任何发布。"
+              echo "如需发版，请修改 \`.github/versions/*.yaml\` 的 version 后合入 release。"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── 发布编排 ────────────────────────────────────────────────────────────
+  # 直接调用 release.yml / build-mobile.yml，而不是等 tag push 派生 workflow ——
+  # GITHUB_TOKEN 推送的 tag 不会触发 downstream workflow，必须显式调用。
+  release-web:
+    name: Publish web release
+    needs: [bump-tags]
+    if: needs.bump-tags.outputs.web_tag != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.bump-tags.outputs.web_tag }}
+
+  release-desktop:
+    name: Publish desktop release
+    needs: [bump-tags]
+    if: needs.bump-tags.outputs.desktop_tag != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.bump-tags.outputs.desktop_tag }}
+
+  release-mobile:
+    name: Publish mobile release
+    needs: [bump-tags]
+    if: needs.bump-tags.outputs.mobile_tag != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build-mobile.yml
+    with:
+      tag: ${{ needs.bump-tags.outputs.mobile_tag }}
+

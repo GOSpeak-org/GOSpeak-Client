@@ -1,0 +1,14 @@
+{
+	"name": "com.gospeak.welcome",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"description": "GOSpeak 基础能力插件：成员加入时查询用户信息并记录欢迎日志",
+	"main": "index.js",
+	"scripts": {
+		"start": "node index.js"
+	},
+	"dependencies": {
+		"@gospeak/plugin-sdk": "file:../../packages/plugin-sdk"
+	}
+}

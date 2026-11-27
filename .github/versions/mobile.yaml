@@ -1,0 +1,9 @@
+# GOSpeak 移动端（app/mobile，Capacitor）版本 —— 显式声明，版本门禁的单一事实来源。
+#
+# 发版流程：修改本文件的 version 并合入 release 后，version-bump.yml 会打上
+# `gospeak-mobile-v<version>` tag，build-mobile.yml 随之构建并发布 APK 到
+# 移动端自己的 Release。
+#
+# 同步约束（check-version.mjs 校验）：app/mobile/package.json、Android
+# build.gradle（versionName + versionCode）、iOS project.pbxproj 必须与本文件一致。
+version: "1.4.0-rc.1"

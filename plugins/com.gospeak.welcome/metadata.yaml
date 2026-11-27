@@ -1,0 +1,5 @@
+runtime: node
+plugin_id: com.gospeak.welcome
+name: 欢迎插件
+version: 1.0.0
+entrypoint: index.js

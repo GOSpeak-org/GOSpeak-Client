@@ -1,0 +1,35 @@
+{
+	"name": "@gospeak/mobile",
+	"version": "1.4.0-rc.1",
+	"private": true,
+	"description": "GOSpeak mobile client host (Capacitor).",
+	"type": "module",
+	"scripts": {
+		"build:web": "pnpm --filter @gospeak/web build:mobile",
+		"version:sync": "node ../scripts/mobile-version.mjs",
+		"bind:rules": "node ../scripts/mobile-bind-proxyrules.mjs --target=all",
+		"bind:rules:ios": "node ../scripts/mobile-bind-proxyrules.mjs --target=ios",
+		"bind:rules:android": "node ../scripts/mobile-bind-proxyrules.mjs --target=android",
+		"sync": "pnpm run version:sync && pnpm run build:web && pnpm run bind:rules && cap sync",
+		"sync:no-bind": "pnpm run version:sync && pnpm run build:web && cap sync",
+		"sync:ios": "pnpm run version:sync && pnpm run build:web && pnpm run bind:rules:ios && cap sync ios",
+		"sync:android": "pnpm run version:sync && pnpm run build:web && pnpm run bind:rules:android && cap sync android",
+		"open:ios": "cap open ios",
+		"open:android": "cap open android",
+		"run:ios": "pnpm run sync:ios && cap run ios",
+		"run:android": "pnpm run sync:android && cap run android"
+	},
+	"dependencies": {
+		"@capacitor/android": "^8.6.2",
+		"@capacitor/app": "^8.1.2",
+		"@capacitor/core": "^8.6.2",
+		"@capacitor/ios": "^8.6.2",
+		"@capacitor/keyboard": "^8.0.6",
+		"@capacitor/local-notifications": "^8.3.1",
+		"@capacitor/push-notifications": "^8.1.3",
+		"@gospeak/mobile-capabilities": "workspace:*"
+	},
+	"devDependencies": {
+		"@capacitor/cli": "^8.6.2"
+	}
+}

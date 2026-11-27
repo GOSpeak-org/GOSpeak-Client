@@ -1,0 +1,12 @@
+# GOSpeak Web（web/）发布版本 —— 显式声明，是 Web Release 的单一事实来源。
+#
+# 发版流程：修改本文件的 version 并合入 release 后，version-bump.yml 打上
+# `gospeak-web-v<version>` tag；release.yml 的 web job 构建 dist 并上传到该 tag 的 Release。
+#
+# 命名规范（scripts/release-naming.mjs）：
+#   tag        gospeak-web-v<version>
+#   产物       gospeak-web-<version>-dist.tar.gz
+version: "1.4.0-rc.1"
+
+notes: |
+  GOSpeak Web 1.4.0-rc.1 —— 客户端拆分后的首个 Web Release。

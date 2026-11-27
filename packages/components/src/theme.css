@@ -1,0 +1,811 @@
+/*
+ * 主题 token：亮色 = daisyUI acid 实测值（对照 app/web/visual-baseline/baseline/ 截图），
+ * 暗色 = 由亮色派生的变体，不独立选色。
+ *
+ * ── 暗色派生四条规则（改色必须遵守，否则明暗两套会"不像一家人"）──
+ *
+ * 1) 色相一致，明度提升。亮色的语义色一律是"饱和的重色"（红/橙/青柠/黄/蓝），
+ *    暗色不复选新色相，只把同一 H 抬到能在深底上读清的明度区间，并把 C 降到
+ *    约 65%~85%——纯高饱和在深底上会发光、边缘振颤。
+ *    secondary 只从橙（48.25）派生，accent 只从青柠（122.962）派生；
+ *    不要退回旧版那套洋红 354 / 青 181 的配色，那和亮色是两套视觉语言。
+ *
+ * 2) 表面是一条单调亮度阶梯，明暗方向相反：
+ *    亮：sunken(83.4) < selected(89) < border(91) < muted(95) < background = card(98) = popover(98)
+ *    暗：sunken(16.5) < muted(19.5) < background(21) < card(24) < popover(27) < selected(29.5)
+ *    暗色没有阴影可用，层级只能靠亮度，所以 background / card / popover 必须分开三档；
+ *    `bg-muted` 容器里放 `bg-card` 面板（见 layouts/layout.tsx），muted 必须更低，
+ *    面板才是"浮起来"的，而不是被压进一个洞。
+ *
+ * 3) 描边方向随主题翻转。亮色 border 比表面暗（91 vs 98）；暗色 border 必须比表面亮
+ *    （30.5 vs card 24），否则边框消失。两套的 border↔card 对比度都锁定在 ≈1.23:1。
+ *
+ * 4) 文字三档按"对比度"而不是按 alpha 对齐。暗色底比亮色底亮，同样的 60% alpha
+ *    会算出更弱的对比，所以暗色的 alpha 往下调到 56% / 38%，
+ *    保证 muted≈5.4:1、faint≈3.2:1，与亮色的 5.6:1 / 3.0:1 观感持平。
+ *
+ * --primary 是品牌主色，明暗统一走 indigo 色相（H≈277）：亮色 indigo-600，暗色 56.5%（白字 4.6:1）。
+ *
+ * 文字层级只允许三档（禁止 text-foreground/45 这类任意透明度）：
+ *   text-foreground         主文字：标题、正文、表格内容
+ *   text-muted-foreground   次要文字（亮 60% / 暗 56%）：说明、辅助列、图标按钮默认色
+ *   text-faint-foreground   弱化文字（亮 42% / 暗 38%）：占位符、脚注、空状态提示
+ *
+ * 基础两套也挂 data-theme 别名（acid / dark）：设置页的主题卡片把 data-theme
+ * 写在自身做色点预览，若基础套没有对应选择器，卡片就会继承 <html> 当前主题，
+ * 切换主题时色点会跟着变。
+ */
+:root,
+[data-theme="acid"] {
+	/* 原生控件（滚动条、输入框、日期选择器）跟随主题，
+	   否则深色主题下这些系统部件仍是浅色皮肤，和页面明显割裂 */
+	color-scheme: light;
+	/* 字体统一由打包字体决定，不落到各平台 system-ui（见 app/web/src/styles.css） */
+	--font-sans:
+		"Inter Variable", "Noto Sans SC Variable", ui-sans-serif, system-ui,
+		sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+	--default-font-family: var(--font-sans);
+	--background: oklch(98% 0 0);
+	--background-base: oklch(98% 0 0);
+	--foreground: oklch(0% 0 0);
+	--card: oklch(98% 0 0);
+	--card-base: oklch(98% 0 0);
+	--card-foreground: oklch(0% 0 0);
+	--popover-base: oklch(98% 0 0);
+	--popover: oklch(98% 0 0);
+	--popover-foreground: oklch(0% 0 0);
+	--primary: oklch(51.1% 0.262 276.966);
+	--primary-foreground: oklch(98% 0.005 277);
+	--secondary: oklch(73.37% 0.224 48.25);
+	--secondary-foreground: oklch(14.674% 0.044 48.25);
+	--muted: oklch(95% 0 0);
+	--muted-base: oklch(95% 0 0);
+	--muted-foreground: oklch(0% 0 0 / 60%);
+	--faint-foreground: oklch(0% 0 0 / 42%);
+	--accent: oklch(92.78% 0.264 122.962);
+	--accent-foreground: oklch(18.556% 0.052 122.962);
+	--destructive: oklch(64.84% 0.293 29.349);
+	--destructive-foreground: oklch(12.968% 0.058 29.349);
+	--success: oklch(85.72% 0.266 158.53);
+	--success-foreground: oklch(17.144% 0.053 158.53);
+	--warning: oklch(91.01% 0.212 100.5);
+	--warning-foreground: oklch(18.202% 0.042 100.5);
+	--info: oklch(60.72% 0.227 252.05);
+	--info-foreground: oklch(12.144% 0.045 252.05);
+	--neutral: oklch(21.31% 0.128 278.68);
+	--neutral-foreground: oklch(84.262% 0.025 278.68);
+	--border-base: oklch(91% 0 0);
+	--border: oklch(91% 0 0);
+	--input-base: oklch(91% 0 0);
+	--input: oklch(91% 0 0);
+	--ring: oklch(51.1% 0.262 276.966);
+	--overlay-scrim: oklch(0% 0 0 / 50%);
+	--scrollbar-thumb: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(
+		in oklab,
+		var(--foreground) 55%,
+		transparent
+	);
+	--muted-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 62%,
+		transparent
+	);
+	--faint-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 42%,
+		transparent
+	);
+	/* 下沉面 / 选中面必须按主题分别定值（见文首规则 2）。
+	   亮色 selected 提到描边下方一档：旧值 84.7% 和 sunken 83.4% 几乎重合，
+	   压在浅色玻璃面板上像贴了一块方砖；89% 才是"比描边略深的选择面"。
+	   暗色不能沿用亮色算法，那样算是"往上浮"，会顶到 card 24% 上。 */
+	--sunken-base: oklch(83.41% 0 0);
+	--sunken: oklch(83.41% 0 0);
+	--selected-base: oklch(89% 0 0);
+	--selected: oklch(89% 0 0);
+}
+
+.dark,
+[data-theme="dark"] {
+	color-scheme: dark;
+	/* 中性底色带 0.006~0.009 的品牌 indigo 色相，肉眼视为中性灰，但与 primary 同族 */
+	--background: oklch(21% 0.006 277);
+	--background-base: oklch(21% 0.006 277);
+	/* 不用纯白：深底上的 100% 白会溢光，94% 留出余地 */
+	--foreground: oklch(94% 0.006 277);
+	--card: oklch(24% 0.008 277);
+	--card-base: oklch(24% 0.008 277);
+	--card-foreground: oklch(94% 0.006 277);
+	--popover-base: oklch(27% 0.009 277);
+	--popover: oklch(27% 0.009 277);
+	--popover-foreground: oklch(94% 0.006 277);
+	--primary: oklch(56.5% 0.205 277);
+	--primary-foreground: oklch(98% 0.01 277);
+	--secondary: oklch(74% 0.163 48.25);
+	--secondary-foreground: oklch(22% 0.05 48.25);
+	--muted: oklch(19.5% 0.006 277);
+	--muted-base: oklch(19.5% 0.006 277);
+	--muted-foreground: oklch(94% 0.006 277 / 56%);
+	--faint-foreground: oklch(94% 0.006 277 / 38%);
+	--accent: oklch(82% 0.196 122.962);
+	--accent-foreground: oklch(22% 0.06 122.962);
+	--destructive: oklch(69% 0.185 29.349);
+	--destructive-foreground: oklch(20% 0.06 29.349);
+	--success: oklch(79% 0.185 158.53);
+	--success-foreground: oklch(22% 0.06 158.53);
+	--warning: oklch(85% 0.168 100.5);
+	--warning-foreground: oklch(24% 0.05 100.5);
+	--info: oklch(72% 0.145 252.05);
+	--info-foreground: oklch(20% 0.05 252.05);
+	--neutral: oklch(31% 0.032 278.68);
+	--neutral-foreground: oklch(92% 0.01 278.68);
+	--border-base: oklch(30.5% 0.008 277);
+	--border: oklch(30.5% 0.008 277);
+	--input-base: oklch(30.5% 0.008 277);
+	--input: oklch(30.5% 0.008 277);
+	--ring: oklch(66% 0.185 277);
+	--overlay-scrim: oklch(7% 0.012 277 / 66%);
+	--scrollbar-thumb: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(
+		in oklab,
+		var(--foreground) 55%,
+		transparent
+	);
+	--muted-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 62%,
+		transparent
+	);
+	--faint-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 42%,
+		transparent
+	);
+	--sunken-base: oklch(16.5% 0.005 277);
+	--sunken: oklch(16.5% 0.005 277);
+	--selected-base: oklch(29.5% 0.009 277);
+	--selected: oklch(29.5% 0.009 277);
+}
+
+/*
+ * ── 扩展主题家族（新增三组，浅/深成对）──────────────────────────────
+ * aurora / midnight  冷青 + 丁香紫，深蓝黑
+ * ember  / cinder    暖橙 + 琥珀，暖炭褐
+ * forest / grove     松绿 + 青瓷，深墨绿
+ * 暗色由对应浅色派生，仍遵守文首四条规则；语义色沿用 acid 色相，
+ * primary 保持品牌 indigo，避免跨主题语义漂移。
+ *
+ * 作用域用 [data-theme] 而非 class：themeStore 会在 <html> 上写 data-theme，
+ * 设置页的主题卡片也把 data-theme 写在自身，色块预览因此自动跟随。
+ * 选择器优先级与 :root / .dark 相同（0,1,0），靠源码顺序覆盖。
+ */
+[data-theme="aurora"] {
+	color-scheme: light;
+	--background: oklch(98.5% 0.005 235);
+	--background-base: oklch(98.5% 0.005 235);
+	--foreground: oklch(8% 0.012 255);
+	--card: oklch(98.5% 0.005 235);
+	--card-base: oklch(98.5% 0.005 235);
+	--card-foreground: oklch(8% 0.012 255);
+	--popover-base: oklch(98.5% 0.005 235);
+	--popover: oklch(98.5% 0.005 235);
+	--popover-foreground: oklch(8% 0.012 255);
+	--primary: oklch(51.1% 0.262 276.966);
+	--primary-foreground: oklch(98% 0.005 277);
+	--secondary: oklch(70% 0.13 210);
+	--secondary-foreground: oklch(16% 0.03 210);
+	--muted: oklch(94.5% 0.007 235);
+	--muted-base: oklch(94.5% 0.007 235);
+	--muted-foreground: oklch(8% 0.012 255 / 60%);
+	--faint-foreground: oklch(8% 0.012 255 / 42%);
+	--accent: oklch(89% 0.11 310);
+	--accent-foreground: oklch(24% 0.06 310);
+	--destructive: oklch(64.84% 0.293 29.349);
+	--destructive-foreground: oklch(12.968% 0.058 29.349);
+	--success: oklch(85.72% 0.266 158.53);
+	--success-foreground: oklch(17.144% 0.053 158.53);
+	--warning: oklch(91.01% 0.212 100.5);
+	--warning-foreground: oklch(18.202% 0.042 100.5);
+	--info: oklch(60.72% 0.227 252.05);
+	--info-foreground: oklch(12.144% 0.045 252.05);
+	--neutral: oklch(28% 0.04 250);
+	--neutral-foreground: oklch(88% 0.015 250);
+	--border-base: oklch(91.5% 0.008 235);
+	--border: oklch(91.5% 0.008 235);
+	--input-base: oklch(91.5% 0.008 235);
+	--input: oklch(91.5% 0.008 235);
+	--ring: oklch(51.1% 0.262 276.966);
+	--overlay-scrim: oklch(0% 0 0 / 50%);
+	--scrollbar-thumb: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(
+		in oklab,
+		var(--foreground) 55%,
+		transparent
+	);
+	--muted-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 62%,
+		transparent
+	);
+	--faint-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 42%,
+		transparent
+	);
+	--sunken-base: oklch(82.5% 0.009 235);
+	--sunken: oklch(82.5% 0.009 235);
+	--selected-base: oklch(89% 0.012 235);
+	--selected: oklch(89% 0.012 235);
+}
+
+[data-theme="midnight"] {
+	color-scheme: dark;
+	--background: oklch(20% 0.014 250);
+	--background-base: oklch(20% 0.014 250);
+	--foreground: oklch(94% 0.01 250);
+	--card: oklch(23% 0.016 250);
+	--card-base: oklch(23% 0.016 250);
+	--card-foreground: oklch(94% 0.01 250);
+	--popover-base: oklch(26% 0.018 250);
+	--popover: oklch(26% 0.018 250);
+	--popover-foreground: oklch(94% 0.01 250);
+	--primary: oklch(57% 0.19 277);
+	--primary-foreground: oklch(98% 0.01 277);
+	--secondary: oklch(73% 0.09 210);
+	--secondary-foreground: oklch(16% 0.03 210);
+	--muted: oklch(18.5% 0.012 250);
+	--muted-base: oklch(18.5% 0.012 250);
+	--muted-foreground: oklch(94% 0.01 250 / 56%);
+	--faint-foreground: oklch(94% 0.01 250 / 38%);
+	--accent: oklch(81% 0.1 310);
+	--accent-foreground: oklch(22% 0.05 310);
+	--destructive: oklch(69% 0.18 29.349);
+	--destructive-foreground: oklch(20% 0.06 29.349);
+	--success: oklch(79% 0.175 158.53);
+	--success-foreground: oklch(22% 0.06 158.53);
+	--warning: oklch(85% 0.16 100.5);
+	--warning-foreground: oklch(24% 0.05 100.5);
+	--info: oklch(74% 0.135 252.05);
+	--info-foreground: oklch(20% 0.05 252.05);
+	--neutral: oklch(29% 0.035 250);
+	--neutral-foreground: oklch(92% 0.012 250);
+	--border-base: oklch(30% 0.016 250);
+	--border: oklch(30% 0.016 250);
+	--input-base: oklch(30% 0.016 250);
+	--input: oklch(30% 0.016 250);
+	--ring: oklch(66% 0.17 277);
+	--overlay-scrim: oklch(7% 0.012 250 / 66%);
+	--scrollbar-thumb: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(
+		in oklab,
+		var(--foreground) 55%,
+		transparent
+	);
+	--muted-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 62%,
+		transparent
+	);
+	--faint-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 42%,
+		transparent
+	);
+	--sunken-base: oklch(15% 0.01 250);
+	--sunken: oklch(15% 0.01 250);
+	--selected-base: oklch(28.5% 0.02 250);
+	--selected: oklch(28.5% 0.02 250);
+}
+
+[data-theme="ember"] {
+	color-scheme: light;
+	--background: oklch(98.5% 0.006 75);
+	--background-base: oklch(98.5% 0.006 75);
+	--foreground: oklch(8% 0.012 40);
+	--card: oklch(98.5% 0.006 75);
+	--card-base: oklch(98.5% 0.006 75);
+	--card-foreground: oklch(8% 0.012 40);
+	--popover-base: oklch(98.5% 0.006 75);
+	--popover: oklch(98.5% 0.006 75);
+	--popover-foreground: oklch(8% 0.012 40);
+	--primary: oklch(51.1% 0.262 276.966);
+	--primary-foreground: oklch(98% 0.005 277);
+	--secondary: oklch(66% 0.16 45);
+	--secondary-foreground: oklch(16% 0.03 45);
+	--muted: oklch(94.5% 0.009 70);
+	--muted-base: oklch(94.5% 0.009 70);
+	--muted-foreground: oklch(8% 0.012 40 / 60%);
+	--faint-foreground: oklch(8% 0.012 40 / 42%);
+	--accent: oklch(86% 0.14 85);
+	--accent-foreground: oklch(22% 0.05 85);
+	--destructive: oklch(64.84% 0.293 29.349);
+	--destructive-foreground: oklch(12.968% 0.058 29.349);
+	--success: oklch(85.72% 0.266 158.53);
+	--success-foreground: oklch(17.144% 0.053 158.53);
+	--warning: oklch(91.01% 0.212 100.5);
+	--warning-foreground: oklch(18.202% 0.042 100.5);
+	--info: oklch(60.72% 0.227 252.05);
+	--info-foreground: oklch(12.144% 0.045 252.05);
+	--neutral: oklch(28% 0.045 55);
+	--neutral-foreground: oklch(88% 0.018 55);
+	--border-base: oklch(91.5% 0.01 70);
+	--border: oklch(91.5% 0.01 70);
+	--input-base: oklch(91.5% 0.01 70);
+	--input: oklch(91.5% 0.01 70);
+	--ring: oklch(51.1% 0.262 276.966);
+	--overlay-scrim: oklch(0% 0 0 / 50%);
+	--scrollbar-thumb: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(
+		in oklab,
+		var(--foreground) 55%,
+		transparent
+	);
+	--muted-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 62%,
+		transparent
+	);
+	--faint-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 42%,
+		transparent
+	);
+	--sunken-base: oklch(82.5% 0.012 70);
+	--sunken: oklch(82.5% 0.012 70);
+	--selected-base: oklch(89% 0.014 70);
+	--selected: oklch(89% 0.014 70);
+}
+
+[data-theme="cinder"] {
+	color-scheme: dark;
+	--background: oklch(20% 0.012 55);
+	--background-base: oklch(20% 0.012 55);
+	--foreground: oklch(94% 0.01 60);
+	--card: oklch(23% 0.014 55);
+	--card-base: oklch(23% 0.014 55);
+	--card-foreground: oklch(94% 0.01 60);
+	--popover-base: oklch(26% 0.016 55);
+	--popover: oklch(26% 0.016 55);
+	--popover-foreground: oklch(94% 0.01 60);
+	--primary: oklch(57% 0.19 277);
+	--primary-foreground: oklch(98% 0.01 277);
+	--secondary: oklch(72% 0.11 45);
+	--secondary-foreground: oklch(16% 0.03 45);
+	--muted: oklch(18.5% 0.011 55);
+	--muted-base: oklch(18.5% 0.011 55);
+	--muted-foreground: oklch(94% 0.01 60 / 56%);
+	--faint-foreground: oklch(94% 0.01 60 / 38%);
+	--accent: oklch(82% 0.1 85);
+	--accent-foreground: oklch(22% 0.05 85);
+	--destructive: oklch(69% 0.18 29.349);
+	--destructive-foreground: oklch(20% 0.06 29.349);
+	--success: oklch(79% 0.175 158.53);
+	--success-foreground: oklch(22% 0.06 158.53);
+	--warning: oklch(85% 0.16 100.5);
+	--warning-foreground: oklch(24% 0.05 100.5);
+	--info: oklch(74% 0.135 252.05);
+	--info-foreground: oklch(20% 0.05 252.05);
+	--neutral: oklch(29% 0.04 55);
+	--neutral-foreground: oklch(92% 0.012 55);
+	--border-base: oklch(30% 0.014 55);
+	--border: oklch(30% 0.014 55);
+	--input-base: oklch(30% 0.014 55);
+	--input: oklch(30% 0.014 55);
+	--ring: oklch(66% 0.17 277);
+	--overlay-scrim: oklch(7% 0.012 55 / 66%);
+	--scrollbar-thumb: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(
+		in oklab,
+		var(--foreground) 55%,
+		transparent
+	);
+	--muted-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 62%,
+		transparent
+	);
+	--faint-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 42%,
+		transparent
+	);
+	--sunken-base: oklch(15% 0.01 55);
+	--sunken: oklch(15% 0.01 55);
+	--selected-base: oklch(28.5% 0.02 55);
+	--selected: oklch(28.5% 0.02 55);
+}
+
+[data-theme="forest"] {
+	color-scheme: light;
+	--background: oklch(98.3% 0.006 150);
+	--background-base: oklch(98.3% 0.006 150);
+	--foreground: oklch(8% 0.012 155);
+	--card: oklch(98.3% 0.006 150);
+	--card-base: oklch(98.3% 0.006 150);
+	--card-foreground: oklch(8% 0.012 155);
+	--popover-base: oklch(98.3% 0.006 150);
+	--popover: oklch(98.3% 0.006 150);
+	--popover-foreground: oklch(8% 0.012 155);
+	--primary: oklch(51.1% 0.262 276.966);
+	--primary-foreground: oklch(98% 0.005 277);
+	--secondary: oklch(64% 0.11 155);
+	--secondary-foreground: oklch(16% 0.03 155);
+	--muted: oklch(94% 0.009 150);
+	--muted-base: oklch(94% 0.009 150);
+	--muted-foreground: oklch(8% 0.012 155 / 60%);
+	--faint-foreground: oklch(8% 0.012 155 / 42%);
+	--accent: oklch(86% 0.1 170);
+	--accent-foreground: oklch(20% 0.04 170);
+	--destructive: oklch(64.84% 0.293 29.349);
+	--destructive-foreground: oklch(12.968% 0.058 29.349);
+	--success: oklch(85.72% 0.266 158.53);
+	--success-foreground: oklch(17.144% 0.053 158.53);
+	--warning: oklch(91.01% 0.212 100.5);
+	--warning-foreground: oklch(18.202% 0.042 100.5);
+	--info: oklch(60.72% 0.227 252.05);
+	--info-foreground: oklch(12.144% 0.045 252.05);
+	--neutral: oklch(26% 0.05 155);
+	--neutral-foreground: oklch(88% 0.015 155);
+	--border-base: oklch(91.5% 0.01 150);
+	--border: oklch(91.5% 0.01 150);
+	--input-base: oklch(91.5% 0.01 150);
+	--input: oklch(91.5% 0.01 150);
+	--ring: oklch(51.1% 0.262 276.966);
+	--overlay-scrim: oklch(0% 0 0 / 50%);
+	--scrollbar-thumb: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(
+		in oklab,
+		var(--foreground) 55%,
+		transparent
+	);
+	--muted-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 62%,
+		transparent
+	);
+	--faint-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 42%,
+		transparent
+	);
+	--sunken-base: oklch(82% 0.011 150);
+	--sunken: oklch(82% 0.011 150);
+	--selected-base: oklch(89% 0.013 150);
+	--selected: oklch(89% 0.013 150);
+}
+
+[data-theme="grove"] {
+	color-scheme: dark;
+	--background: oklch(19.5% 0.012 155);
+	--background-base: oklch(19.5% 0.012 155);
+	--foreground: oklch(94% 0.01 155);
+	--card: oklch(22.5% 0.014 155);
+	--card-base: oklch(22.5% 0.014 155);
+	--card-foreground: oklch(94% 0.01 155);
+	--popover-base: oklch(25.5% 0.016 155);
+	--popover: oklch(25.5% 0.016 155);
+	--popover-foreground: oklch(94% 0.01 155);
+	--primary: oklch(57% 0.19 277);
+	--primary-foreground: oklch(98% 0.01 277);
+	--secondary: oklch(70% 0.08 155);
+	--secondary-foreground: oklch(16% 0.03 155);
+	--muted: oklch(18% 0.01 155);
+	--muted-base: oklch(18% 0.01 155);
+	--muted-foreground: oklch(94% 0.01 155 / 56%);
+	--faint-foreground: oklch(94% 0.01 155 / 38%);
+	--accent: oklch(80% 0.06 170);
+	--accent-foreground: oklch(20% 0.04 170);
+	--destructive: oklch(69% 0.18 29.349);
+	--destructive-foreground: oklch(20% 0.06 29.349);
+	--success: oklch(79% 0.175 158.53);
+	--success-foreground: oklch(22% 0.06 158.53);
+	--warning: oklch(85% 0.16 100.5);
+	--warning-foreground: oklch(24% 0.05 100.5);
+	--info: oklch(74% 0.135 252.05);
+	--info-foreground: oklch(20% 0.05 252.05);
+	--neutral: oklch(28% 0.035 155);
+	--neutral-foreground: oklch(92% 0.012 155);
+	--border-base: oklch(29.5% 0.014 155);
+	--border: oklch(29.5% 0.014 155);
+	--input-base: oklch(29.5% 0.014 155);
+	--input: oklch(29.5% 0.014 155);
+	--ring: oklch(66% 0.17 277);
+	--overlay-scrim: oklch(7% 0.012 155 / 66%);
+	--scrollbar-thumb: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(
+		in oklab,
+		var(--foreground) 55%,
+		transparent
+	);
+	--muted-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 62%,
+		transparent
+	);
+	--faint-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 42%,
+		transparent
+	);
+	--sunken-base: oklch(14.5% 0.008 155);
+	--sunken: oklch(14.5% 0.008 155);
+	--selected-base: oklch(28% 0.018 155);
+	--selected: oklch(28% 0.018 155);
+}
+
+/*
+ * 圆角 token（Design Token 唯一来源）
+ *
+ * 所有圆角都由 --radius 派生，业务代码只允许使用 rounded-* 工具类：
+ * 禁止 rounded-[4px] 这类任意值写法（rounded-sm/lg 是合法档位）。
+ * 圆角与明暗主题无关，因此不放进 :root / .dark。
+ *
+ * 档位          值        用途
+ * rounded-xs    2px       极细：缩略图、分隔条、微型指示器
+ * rounded-sm    4px       控件：输入框、小按钮、徽章、列表内按钮
+ * rounded-md    6px       紧凑块：列表行、内嵌小面板
+ * rounded-lg    8px       默认：按钮、卡片、下拉面板、对话框内容块
+ * rounded-xl    12px      区块：管理页 section、设置面板
+ * rounded-2xl   16px      大容器：弹窗、页面级浮层
+ * rounded-3xl   24px      特大容器（极少使用）
+ * rounded-full  9999px    胶囊：头像、状态点、标签、圆形按钮
+ *
+ * 语义别名（与上面档位等值，按"用途"选型时优先用它）：
+ * rounded-field   = sm   表单控件
+ * rounded-card    = lg   卡片
+ * rounded-panel   = xl   区块面板
+ * rounded-overlay = 2xl  弹窗/浮层
+ * rounded-pill    = full 胶囊
+ */
+/*
+ * 字号 token（Design Token 唯一来源）
+ *
+ * 全站只允许这 6 档，禁止 text-[13px] 这类任意值：
+ * text-2xs  11px  徽章、极小的辅助标注
+ * text-xs   12px  次要说明、表格辅助列
+ * text-sm   14px  正文默认（表单、列表、聊天内容）
+ * text-base 16px  强调正文
+ * text-lg   18px  页头标题
+ * text-xl   20px  大标题
+ */
+
+/*
+ * 派生 token：引用已按当前主题解析的语义色，无需逐套重复定义。
+ * var() 在计算时取激活主题的语义值，因此亮/暗/扩展主题自动跟随。
+ * 用于原先用文字 token 充当半透明表面、或主色底上的文字层级的场景。
+ */
+:root {
+	--scrollbar-thumb: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(
+		in oklab,
+		var(--foreground) 55%,
+		transparent
+	);
+	--muted-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 62%,
+		transparent
+	);
+	--faint-primary-foreground: color-mix(
+		in oklab,
+		var(--primary-foreground) 42%,
+		transparent
+	);
+}
+
+@theme {
+	/* 层级标度：浮层一律使用语义 z token，禁止 z-[N] / 内联 zIndex */
+	--z-base: 0;
+	--z-raised: 10;
+	--z-dropdown: 40;
+	--z-dialog: 50;
+	--z-popover: 100;
+	--z-toast: 200;
+
+	--font-sans:
+		"Inter Variable", "Noto Sans SC Variable", ui-sans-serif, system-ui,
+		sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+
+	--text-2xs: 0.6875rem;
+	--text-2xs--line-height: 1rem;
+
+	--text-xs: 0.75rem;
+	--text-xs--line-height: calc(1 / 0.75);
+	--text-sm: 0.875rem;
+	--text-sm--line-height: calc(1.25 / 0.875);
+	--text-base: 1rem;
+	--text-base--line-height: calc(1.5 / 1);
+	--text-lg: 1.125rem;
+	--text-lg--line-height: calc(1.75 / 1.125);
+	--text-xl: 1.25rem;
+	--text-xl--line-height: calc(1.75 / 1.25);
+
+	--radius: 8px;
+	--radius-xs: 2px;
+	--radius-sm: calc(var(--radius) / 2);
+	--radius-md: calc(var(--radius) * 0.75);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) * 1.5);
+	--radius-2xl: calc(var(--radius) * 2);
+	--radius-3xl: calc(var(--radius) * 3);
+	--radius-full: 9999px;
+
+	--radius-field: var(--radius-sm);
+	--radius-card: var(--radius-lg);
+	--radius-panel: var(--radius-xl);
+	--radius-overlay: var(--radius-2xl);
+	--radius-pill: var(--radius-full);
+}
+
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-faint-foreground: var(--faint-foreground);
+	/* 下沉表面：语音区背景、覆盖层底；选中面：当前频道/提及项。两者由 :root / .dark 分别定值 */
+	--color-sunken: var(--sunken);
+	--color-selected: var(--selected);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-success: var(--success);
+	--color-success-foreground: var(--success-foreground);
+	--color-warning: var(--warning);
+	--color-warning-foreground: var(--warning-foreground);
+	--color-info: var(--info);
+	--color-info-foreground: var(--info-foreground);
+	--color-neutral: var(--neutral);
+	--color-neutral-foreground: var(--neutral-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-overlay-scrim: var(--overlay-scrim);
+	--color-scrollbar-thumb: var(--scrollbar-thumb);
+	--color-scrollbar-thumb-hover: var(--scrollbar-thumb-hover);
+	--color-muted-primary-foreground: var(--muted-primary-foreground);
+	--color-faint-primary-foreground: var(--faint-primary-foreground);
+}
+
+/* z 层级语义工具类：@theme 里的 --z-* 只定义变量，不生成 z-popover 这类工具类 */
+@utility z-base {
+	z-index: var(--z-base);
+}
+@utility z-raised {
+	z-index: var(--z-raised);
+}
+@utility z-dropdown {
+	z-index: var(--z-dropdown);
+}
+@utility z-dialog {
+	z-index: var(--z-dialog);
+}
+@utility z-popover {
+	z-index: var(--z-popover);
+}
+@utility z-toast {
+	z-index: var(--z-toast);
+}
+
+/*
+ * 高对比度偏好（系统「对比度：更高」）：只抬文字与描边的对比，
+ * 不动色相与表面阶梯——文首四条派生规则仍然成立，
+ * 只是把「次要 / 弱化」两档压到仍可读、描边加到仍可见。
+ */
+@media (prefers-contrast: more) {
+	:root,
+	[data-theme="acid"] {
+		--muted-foreground: oklch(0% 0 0 / 78%);
+		--faint-foreground: oklch(0% 0 0 / 62%);
+		--border: oklch(62% 0 0);
+		--input: oklch(62% 0 0);
+	}
+	.dark,
+	[data-theme="dark"] {
+		--muted-foreground: oklch(94% 0.006 277 / 82%);
+		--faint-foreground: oklch(94% 0.006 277 / 66%);
+		--border: oklch(48% 0.008 277);
+		--input: oklch(48% 0.008 277);
+	}
+}
+
+/*
+ * 自定义背景玻璃层（个人背景图功能，规格见
+ * docs/superpowers/specs/2026-11-21-custom-background-image-design.md）
+ *
+ * html.bg-custom 与 --bg-* 变量由 web 端 backgroundStore 在启用个人背景图时
+ * 写到 <html>；背景图本身挂在 body 上。各主题块里的 --card-base / --muted-base /
+ * --background-base 是对应原值的副本，玻璃层用 color-mix 把「当前激活主题」的
+ * 表面色调成半透明——八套主题 × 深浅自动派生，无需逐套调值。
+ * 模糊半径与不透明度由设置页两条滑杆给出，无背景时这些规则不命中，
+ * 界面与现状完全一致。
+ *
+ * blur 只挂在启用了半透明表面的外壳容器（surface-glass 工具类）上，
+ * 内层嵌套面板继承半透明变量、不再单独加滤镜，避免滤镜数量爆炸。
+ *
+ * 多面板色差的解法：所有大面积面板必须共用同一层玻璃底——玻璃只挂在
+ * 最外层 Main 外壳（layout.tsx），内部左右面板透明继承同一份 backdrop；
+ * 不要给左右面板各自再挂 surface-glass，否则各自模糊到背景图不同位置
+ * 的像素，同一 token 也会显出左右色差。
+ */
+html.bg-custom {
+	/* 玻璃模式：所有表面 token 都从 -base 派生半透明版本。
+	   -background / -card / -popover 是"浮起来的面"，密度跟不透明度滑杆同源（--bg-card-alpha）；
+	   -muted / -sunken / -selected 是"贴在面板上的面"，低一档（--bg-muted-alpha = 滑杆 × 0.75）；
+	   -border / -input 是发丝线，base 与表面的明度只差 7 级，
+	   若跟着用低密度会直接消失，所以给一个 80% 下限保证分隔线始终可见。 */
+	--background: color-mix(
+		in oklab,
+		var(--background-base) var(--bg-card-alpha, 68%),
+		transparent
+	);
+	--card: color-mix(
+		in oklab,
+		var(--card-base) var(--bg-card-alpha, 68%),
+		transparent
+	);
+	--popover: color-mix(
+		in oklab,
+		var(--popover-base) var(--bg-card-alpha, 68%),
+		transparent
+	);
+	--muted: color-mix(
+		in oklab,
+		var(--muted-base) var(--bg-muted-alpha, 51%),
+		transparent
+	);
+	--sunken: color-mix(
+		in oklab,
+		var(--sunken-base) var(--bg-muted-alpha, 51%),
+		transparent
+	);
+	--selected: color-mix(
+		in oklab,
+		var(--selected-base) var(--bg-muted-alpha, 51%),
+		transparent
+	);
+	--border: color-mix(
+		in oklab,
+		var(--border-base) max(var(--bg-card-alpha, 68%), 80%),
+		transparent
+	);
+	--input: color-mix(
+		in oklab,
+		var(--input-base) max(var(--bg-card-alpha, 68%), 80%),
+		transparent
+	);
+}
+
+/* 背衬层：模糊只在 body 上做一次，所有面板透出同一层背衬。
+   面板自身不再各自挂 backdrop-filter——各自模糊会各自采样背景图不同位置的像素，
+   同一 token 也会显出左右色差（实测左面板比主区暗 26 级、饱和度差 8 倍）。
+   模糊半径与饱和度完全由设置页滑杆的两个变量决定，这里不写死任何数值。 */
+html.bg-custom body {
+	isolation: isolate;
+}
+
+html.bg-custom body::before {
+	content: "";
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+	backdrop-filter: blur(var(--bg-blur, 14px)) saturate(var(--bg-saturate, 1));
+}
+
+html.bg-custom .surface-glass {
+	backdrop-filter: none;
+}
+
+/* 管理页外壳嵌在 Main 的 surface-glass 外壳内，透明继承那一层即可；
+   不再单独叠 bg-background + blur，避免与其它页面出现双重玻璃层。 */

@@ -1,0 +1,146 @@
+# GOSpeak Client Release —— 三端独立发布。
+#
+# tag 由 version-bump.yml 依据 .github/versions/{desktop,mobile,web}.yaml 创建；
+# 也可手动 push tag 补跑。三个 job 完全独立，web 产物不会进入 desktop 构建路径。
+# 命名规范见 scripts/release-naming.mjs。
+
+name: Release
+
+on:
+  push:
+    tags: ["gospeak-desktop-v*", "gospeak-mobile-v*", "gospeak-web-v*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to build"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (gospeak-desktop-v* / gospeak-mobile-v* / gospeak-web-v*)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  web:
+    name: Build and publish web dist
+    if: startsWith(github.ref, 'refs/tags/gospeak-web-v') || startsWith(inputs.tag, 'gospeak-web-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve tag and version
+        id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-${GITHUB_REF_NAME}}"
+          parsed="$(node scripts/release-naming.mjs parse "$tag")"
+          version="${parsed##* }"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build web dist
+        run: GOSPEAK_TARGET=web pnpm --filter @gospeak/web build
+      - name: Archive web dist
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: tar -czf "gospeak-web-${VERSION}-dist.tar.gz" -C web dist
+      - name: Upload to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          asset="gospeak-web-${VERSION}-dist.tar.gz"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" "$asset" --clobber
+
+  desktop:
+    name: Build desktop installers
+    if: startsWith(github.ref, 'refs/tags/gospeak-desktop-v') || startsWith(inputs.tag, 'gospeak-desktop-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve tag and version
+        id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-${GITHUB_REF_NAME}}"
+          parsed="$(node scripts/release-naming.mjs parse "$tag")"
+          version="${parsed##* }"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build desktop frontend
+        run: GOSPEAK_TARGET=desktop pnpm --filter @gospeak/web build
+      - name: Sync frontend into desktop embed directory
+        run: |
+          set -euo pipefail
+          rm -rf desktop/webui/dist
+          mkdir -p desktop/webui/dist
+          cp -R web/dist-desktop/. desktop/webui/dist/
+          test -f desktop/webui/dist/index.html
+      - name: Build installers with MyGo
+        working-directory: desktop
+        run: pnpm exec mygo build
+      - name: Upload installers to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+          shopt -s nullglob
+          files=(desktop/dist/gospeak-desktop-v*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no desktop installer artifacts found"
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber
+
+  mobile:
+    name: Build and publish mobile packages
+    if: startsWith(github.ref, 'refs/tags/gospeak-mobile-v') || startsWith(inputs.tag, 'gospeak-mobile-v')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build-mobile.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
