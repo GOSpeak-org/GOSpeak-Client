@@ -8,6 +8,7 @@ test-results/
 artifacts/
 
 **/dist/
+!desktop/webui/dist/
 **/dist-desktop/
 **/dist-mobile/
 .tanstack/
@@ -18,7 +19,7 @@ web/visual-baseline/*.diff.png
 desktop/mygo.ts
 desktop/gospeak-desktop
 desktop/webui/dist/*
-!desktop/webui/dist/.gitkeep
+!desktop/webui/dist/EMBED_PLACEHOLDER
 mobile/www/
 mobile/build/
 
