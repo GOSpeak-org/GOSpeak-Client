@@ -239,7 +239,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          # macos-14（arm64）已被 GitHub 退役：任务会在获得 runner 之前被直接取消
+          # （annotation: The configuration 'macos-14-arm64-us-default' is not supported）。
+          # macos-15 是当前可用的 arm64 镜像，仍产出 darwin-arm64 的 dmg。
+          - runner: macos-15
             target: darwin-arm64
             goos: darwin
             goarch: arm64
@@ -277,7 +280,19 @@ jobs:
           go-version-file: desktop/go.mod
           cache: false
       - name: Build desktop frontend
-        run: pnpm --filter @gospeak/web build:desktop
+        # build:desktop 是 `GOSPEAK_TARGET=desktop vite build && tsc` 的 POSIX 前缀写法，
+        # 而 Windows 上 npm/pnpm 用 cmd.exe 跑 script，前缀会被当成命令名直接失败。
+        # Windows 腿改用等价的两步（环境变量由 step env 提供），其余平台走原脚本。
+        env:
+          GOSPEAK_TARGET: desktop
+        run: |
+          set -euo pipefail
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            pnpm --filter @gospeak/web exec vite build
+            pnpm --filter @gospeak/web exec tsc
+          else
+            pnpm --filter @gospeak/web build:desktop
+          fi
       - name: Sync frontend into go:embed directory
         run: |
           set -euo pipefail
@@ -472,9 +487,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # gh 需要 git 上下文才能定位仓库；缺 checkout 时 release view 会全部报"不存在"。
+      - uses: actions/checkout@v4
       - name: Write and upload SHASUMS
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           WEB_TAG: ${{ needs.meta.outputs.web_tag }}
           DESKTOP_TAG: ${{ needs.meta.outputs.desktop_tag }}
           MOBILE_TAG: ${{ needs.meta.outputs.mobile_tag }}
