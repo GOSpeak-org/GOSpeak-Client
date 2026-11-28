@@ -130,11 +130,10 @@ jobs:
             fi
           done
 
-          prerelease_flag() {
-            case "$version" in
-              *-*) echo "--prerelease" ;;
-              *) echo "--latest" ;;
-            esac
+          # 版本号带 -rc 也按正式 Release 发布（不标 pre-release），
+          # 统一 --latest：每次发布都让本仓 Latest 指向刚发的这端。
+          latest_flag() {
+            echo "--latest"
           }
 
           # 打 tag（不存在则创建；已存在但不指向本次 release HEAD 则重指向），
@@ -158,7 +157,7 @@ jobs:
             if gh release view "$tag" > /dev/null 2>&1; then
               echo "::notice::Release $tag 已存在，资产稍后覆盖上传" >&2
             else
-              gh release create "$tag" --verify-tag --title "$tag" --generate-notes $(prerelease_flag) >&2
+              gh release create "$tag" --verify-tag --title "$tag" --generate-notes $(latest_flag) >&2
             fi
             printf '%s' "$tag"
           }
