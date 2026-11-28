@@ -125,7 +125,7 @@ jobs:
             if ! wants "$c"; then continue; fi
             declared="$(declared_version "$c")"
             if [ "$declared" != "$version" ]; then
-              echo "::error::.github/versions/$c.yaml 声明 $declared，与本次发布版本 $version 不一致"
+              echo "::error::.github/versions/$c.yaml 声明 ${declared}，与本次发布版本 ${version} 不一致"
               exit 1
             fi
           done
@@ -145,20 +145,20 @@ jobs:
             if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
               at="$(git rev-parse "refs/tags/$tag^{commit}")"
               if [ "$at" != "$sha" ]; then
-                echo "::notice::tag $tag 指向 $at，重指向本次 release HEAD $sha"
-                git tag -f "$tag" "$sha"
-                git push --force origin "refs/tags/$tag"
+                echo "::notice::tag $tag 指向 ${at}，重指向本次 release HEAD $sha" >&2
+                git tag -f "$tag" "$sha" >&2
+                git push --force origin "refs/tags/$tag" >&2
               fi
             else
-              echo "::notice::创建 tag $tag -> $sha"
-              git tag "$tag" "$sha"
-              git push origin "refs/tags/$tag"
+              echo "::notice::创建 tag $tag -> $sha" >&2
+              git tag "$tag" "$sha" >&2
+              git push origin "refs/tags/$tag" >&2
             fi
 
             if gh release view "$tag" > /dev/null 2>&1; then
-              echo "::notice::Release $tag 已存在，资产稍后覆盖上传"
+              echo "::notice::Release $tag 已存在，资产稍后覆盖上传" >&2
             else
-              gh release create "$tag" --verify-tag --title "$tag" --generate-notes $(prerelease_flag)
+              gh release create "$tag" --verify-tag --title "$tag" --generate-notes $(prerelease_flag) >&2
             fi
             printf '%s' "$tag"
           }
@@ -412,7 +412,7 @@ jobs:
           set -euo pipefail
           sdk="${ANDROID_HOME}"
           if [ ! -d "$sdk" ]; then
-            echo "::error::runner 未自带 Android SDK（$sdk）"
+            echo "::error::runner 未自带 Android SDK（${sdk}）"
             exit 1
           fi
           sdkmanager_bin="$(command -v sdkmanager || true)"
@@ -451,7 +451,7 @@ jobs:
           apk_dir="mobile/android/app/build/outputs/apk/debug"
           apk="$(find "$apk_dir" -type f -name '*.apk' -print -quit)"
           if [ -z "${apk:-}" ]; then
-            echo "::error::APK 未产出（$apk_dir）"
+            echo "::error::APK 未产出（${apk_dir}）"
             ls -la "$apk_dir" || true
             exit 1
           fi
